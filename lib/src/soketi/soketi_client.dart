@@ -31,10 +31,13 @@ class SoketiClient {
   /// The default value is 30,000.
   final int pongTimeout;
   String? _socketId;
-  StreamController<SoketiEvent> eventData =
+  StreamController<SoketiEvent> _eventData =
       StreamController<SoketiEvent>.broadcast();
-  static Stream<SoketiEvent> eventStream =
-      _singleton!.eventData.stream.asBroadcastStream();
+
+  StreamController<SoketiEvent> get eventData => _eventData;
+  //Make sure you have instantiated the web socket before subscribe
+  static Stream<SoketiEvent> get eventStream =>
+      _singleton!._eventData.stream.asBroadcastStream();
   String? get socketId => _singleton!._socketId;
 
   bool _isConnected = false;
@@ -263,7 +266,7 @@ class SoketiClient {
         print(soketiEvent.eventName);
         _singleton!._subscriptionTimer?.cancel();
       } else {
-        eventData.add(soketiEvent);
+        _eventData.add(soketiEvent);
       }
     }
   }
