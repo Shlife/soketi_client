@@ -33,8 +33,9 @@ class SoketiClient {
   String? _socketId;
   StreamController<SoketiEvent> eventData =
       StreamController<SoketiEvent>.broadcast();
-  late Stream<SoketiEvent> eventStream = eventData.stream.asBroadcastStream();
-  String? get socketId => _socketId;
+  static Stream<SoketiEvent> eventStream =
+      _singleton!.eventData.stream.asBroadcastStream();
+  String? get socketId => _singleton!._socketId;
 
   bool _isConnected = false;
   bool _hasConnect = false;
@@ -77,8 +78,9 @@ class SoketiClient {
   }
 
   void _sendPing() {
-    if (_channel != null && _isConnected) {
-      _channel!.sink.add(json.encode({'event': 'pusher:ping', 'data': {}}));
+    if (_singleton!._channel != null && _singleton!._isConnected) {
+      _singleton!._channel!.sink
+          .add(json.encode({'event': 'pusher:ping', 'data': {}}));
       print('Ping message sent');
     }
   }
@@ -95,123 +97,125 @@ class SoketiClient {
   /// that subscriptions may also be registered before `connect()` is called,
   /// they will be initiated on connection.
   Set<String> subscribe(String channelName) {
-    if (_channel != null && _isConnected) {
-      _channel!.sink.add(json.encode({
+    if (_singleton!._channel != null && _singleton!._isConnected) {
+      _singleton!._channel!.sink.add(json.encode({
         "event": "pusher:subscribe",
         "data": {"channel": channelName}
       }));
-      _subscriptionTimer = Timer(const Duration(microseconds: 500), () {
+      _singleton!._subscriptionTimer =
+          Timer(const Duration(microseconds: 500), () {
         subscribe(channelName);
       });
-      channelSubscribed.add(channelName);
+      _singleton!.channelSubscribed.add(channelName);
     } else {
-      channelToSubscribe.add(channelName);
+      _singleton!.channelToSubscribe.add(channelName);
     }
-    return channelSubscribed;
+    return _singleton!.channelSubscribed;
   }
 
   /// Unsubscribes from a channel using the name of the channel.
   void unsubscribe(String channelName) {
-    _channel?.sink.add(json.encode({
+    _singleton!._channel?.sink.add(json.encode({
       "event": "pusher:unsubscribe",
       "data": {"channel": channelName}
     }));
-    channelSubscribed.remove(channelName);
-    channelToSubscribe.remove(channelName);
+    _singleton!.channelSubscribed.remove(channelName);
+    _singleton!.channelToSubscribe.remove(channelName);
   }
 
   /// Initiates a connection attempt using the client's
   /// existing connection details
   void connect() {
-    if (_isConnected) return;
+    if (_singleton!._isConnected) return;
     print(_singleton!.host.toString());
-    _channel = _channel ??
+    _singleton!._channel = _singleton!._channel ??
         IOWebSocketChannel.connect(
           '${_singleton!.host.toString()}app/${_singleton!.appKey}?client=js&version=7.0.3&protocol=5',
           protocols: ['wss'],
           connectTimeout: Duration(milliseconds: _singleton!.activityTimeout),
           pingInterval: Duration(milliseconds: _singleton!.pongTimeout),
         );
-    _channel!.stream.listen(
+    _singleton!._channel!.stream.listen(
       (event) {
         _eventHandler(event);
       },
       onDone: () {
         // Connection is closed
-        _isConnected = false;
-        _channel = null;
-        _pingTimer?.cancel(); // Cancel the ping timer upon disconnection
+        _singleton!._isConnected = false;
+        _singleton!._channel = null;
+        _singleton!._pingTimer
+            ?.cancel(); // Cancel the ping timer upon disconnection
         // Auto-reconnect after a delay
         Timer(const Duration(milliseconds: 30), () {
           _singleton!.connect();
         });
       },
       onError: (_) {
-        _isConnected = false;
+        _singleton!._isConnected = false;
         Timer(const Duration(milliseconds: 30), () {
           _singleton!.connect();
         });
       },
     );
-    _hasConnect = true;
-    _isConnected = true;
+    _singleton!._hasConnect = true;
+    _singleton!._isConnected = true;
     _startPingTimer();
   }
 
   void _startPingTimer() {
     _cancelPingTimer();
-    _pingTimer = Timer.periodic(
+    _singleton!._pingTimer = Timer.periodic(
         Duration(milliseconds: _singleton!.activityTimeout), (timer) {
       _sendPing();
     });
   }
 
   void _cancelPingTimer() {
-    _pingTimer?.cancel();
+    _singleton!._pingTimer?.cancel();
   }
 
   /// Disconnects the client's connection
   Future disconnect() async {
-    if (_isConnected) {
-      await _channel?.sink.close(status.goingAway);
-      _isConnected = false;
-      _channel = null;
+    if (_singleton!._isConnected) {
+      await _singleton!._channel?.sink.close(status.goingAway);
+      _singleton!._isConnected = false;
+      _singleton!._channel = null;
 
       _cancelPingTimer();
     }
   }
 
-  bool get isConnected => _isConnected;
+  bool get isConnected => _singleton!._isConnected;
 
   /// Callback that is fired whenever the connection state of the
   /// connection changes. The state typically changes during connection
   /// to Soketi and during disconnection and reconnection.
   void onConnectionStateChange(
       void Function(ConnectionStateChange? state) callback) {
-    _onConnectionStateChange = callback;
+    _singleton!._onConnectionStateChange = callback;
   }
 
   /// Callback that indicates either:
   /// - An error message has been received from Soketi, or
   /// - An error has occurred in the client library.
   void onConnectionError(void Function(ConnectionError? error) callback) {
-    _onConnectionError = callback;
+    _singleton!._onConnectionError = callback;
   }
 
   void _eventHandler(event) {
     var result = EventStreamResult.fromJson(jsonDecode(event.toString()));
 
     if (result.isConnectionStateChange) {
-      // _socketId = await _channel.invokeMethod('getSocketId');
+      // _singleton!._socketId = await _singleton!._channel.invokeMethod('getSocketId');
 
-      if (_onConnectionStateChange != null) {
-        _onConnectionStateChange!(result.connectionStateChange);
+      if (_singleton!._onConnectionStateChange != null) {
+        _singleton!._onConnectionStateChange!(result.connectionStateChange);
       }
     }
 
     if (result.isConnectionError) {
-      if (_onConnectionError != null) {
-        _onConnectionError!(result.connectionError);
+      if (_singleton!._onConnectionError != null) {
+        _singleton!._onConnectionError!(result.connectionError);
       }
     }
 
@@ -221,41 +225,43 @@ class SoketiClient {
       final soketiEvent = SoketiEvent.fromJson(data);
       print(soketiEvent.eventName);
       if (soketiEvent.eventName == 'pusher:error') {
-        _onConnectionError?.call(ConnectionError(
+        _singleton!._onConnectionError?.call(ConnectionError(
           code: soketiEvent.data?['code'],
           message: soketiEvent.data?['message'],
         ));
       } else if (soketiEvent.eventName == 'pusher:connection_state_change') {
-        _onConnectionStateChange?.call(ConnectionStateChange(
+        _singleton!._onConnectionStateChange?.call(ConnectionStateChange(
           currentState: soketiEvent.data?['current'],
           previousState: soketiEvent.data?['previous'],
         ));
       } else if (soketiEvent.eventName == 'pusher:ping') {
         print('Received ping event: ${soketiEvent.data}');
-        _channel?.sink.add(json.encode({'event': 'pusher:pong', 'data': {}}));
+        _singleton!._channel?.sink
+            .add(json.encode({'event': 'pusher:pong', 'data': {}}));
       } else if (soketiEvent.eventName == 'pusher:pong') {
         _handlePong(soketiEvent);
       } else if (soketiEvent.eventName == 'pusher:connection_established') {
-        while (channelToSubscribe.isNotEmpty) {
-          subscribe(channelToSubscribe.elementAt(0));
+        while (_singleton!.channelToSubscribe.isNotEmpty) {
+          subscribe(_singleton!.channelToSubscribe.elementAt(0));
 
-          channelToSubscribe.remove(channelToSubscribe.elementAt(0));
+          _singleton!.channelToSubscribe
+              .remove(_singleton!.channelToSubscribe.elementAt(0));
         }
-        if (_hasConnect) {
-          for (var channel in channelSubscribed) {
+        if (_singleton!._hasConnect) {
+          for (var channel in _singleton!.channelSubscribed) {
             subscribe(channel);
           }
         }
         print('${soketiEvent.eventName} - ${soketiEvent.data}');
         if (soketiEvent.data is Map<String, dynamic>) {
           if (data['socket_id'] != null) {
-            _socketId = data['socket_id'];
+            _singleton!._socketId = data['socket_id'];
           }
         }
       } else if ((soketiEvent.eventName ==
           'pusher_internal:subscription_succeeded')) {
         print(soketiEvent.eventName);
-        _subscriptionTimer?.cancel();
+        _singleton!._subscriptionTimer?.cancel();
       } else {
         eventData.add(soketiEvent);
       }
